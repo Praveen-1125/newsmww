@@ -1,0 +1,539 @@
+import React, { useState, useEffect} from 'react';
+import './classes/PaymentPage.css';
+import { Helmet } from 'react-helmet';
+import { configData } from "../config";
+import { Link, useNavigate } from 'react-router-dom';
+
+const PaymentPage = () => {
+  const [paymentMethod, setPaymentMethod] = useState('CreditCard');
+  const [sameAsShipping, setSameAsShipping] = useState(true);
+  const [formData, setFormData] = useState({
+    email: '',
+    country: '',
+    state: '',
+    firstName: '',
+    lastName: '',
+    address: '',
+    addressOptional: '',
+    zipCode: '',
+    city: '',
+    region: '',
+    phone: '',
+    countryName: '',
+    stateName: '',
+    shippingMethod: '',
+    coupon: '',
+    cardName: '',
+    cardNumber: '',
+    cardExpiry: '',
+    cardCvc: ''
+  });
+  const navigate = useNavigate();
+  const [countrieslist, setCountriesList] = useState({});
+  const [stateslist, setStatesList] = useState({});
+  const [cart, setCart] = useState([]);
+  const [total, setOrderTotal] = useState();
+  const [totalwithshipping, setOrderTotalWithShipping] = useState();
+  const [shippingamount, setShippingAmount] = useState();
+  const [discounts, setDiscounts] = useState({
+      discounts:[],
+      applied_coupons:[],
+  });
+  const [couponerror, setCouponError] = useState();
+  const app_url = configData.APP_URL;
+
+  useEffect(() => {
+   
+    retrieveCountriesList();
+    retrieveCartProducts();
+    retrieveShippingInfo();
+    apply400discount();
+    
+ }, [])
+  async function retrieveCountriesList() {
+    const countrieslistresponse = await fetch(
+      app_url+'smwwcommercecheckout/getcommercecountrieslist',
+      {
+        method: "GET",
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    const countrieslistdata = await countrieslistresponse.json();
+  
+    const countrieslist = {};
+    Object.keys(countrieslistdata.data.result).forEach(function(key) {
+    
+      countrieslist[key] = countrieslistdata.data.result[key];
+  
+    });
+ 
+    setCountriesList(countrieslist);
+  }
+  async function retrieveStatesList(value) {
+    const stateslistresponse = await fetch(
+      app_url+'smwwcommercecheckout/getcommercestateslist?country='+value,
+      {
+        method: "GET",
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    const stateslistdata = await stateslistresponse.json();
+    const stateslist = {};
+    Object.keys(stateslistdata.data.result).forEach(function(key) {
+    
+      stateslist[key] = stateslistdata.data.result[key];
+  
+    });
+ 
+    setStatesList(stateslist);
+  }
+  async function retrieveShippingInfo() {
+    const order_id = localStorage.getItem('order_id');
+    if( order_id) {
+      const response = await fetch(
+      app_url+'smwwcommercecheckout/getcustomershippingdetails?order_id='+order_id,
+      {
+        method: "GET",
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+      )
+      const responsedata = await response.json();
+      const data = responsedata.data.result;
+      const otherdata = responsedata.data;
+      if(data) {
+        retrieveStatesList(data.country);
+        setFormData(prevState => ({
+        ...prevState,
+        email: data.email,
+        country: data.country,
+        state: data.state,
+        firstName: data.firstname,
+        lastName: data.lastname,
+        address: data.address,
+        addressOptional: data.address1,
+        zipCode: data.zipcode,
+        city: data.city,
+        region: data.region,
+        mobile: data.phone,
+        countryName:otherdata.country_name,
+        stateName:otherdata.state_name,
+        shippingMethod:otherdata.shipping_method
+        }));
+      }
+    }  
+  }
+  async function retrieveCartProducts() {
+    const order_id = localStorage.getItem('order_id');
+    if( order_id) {
+      const response = await fetch(
+        app_url+'smwwcommercecheckout/getorderdetails?order_id='+order_id,
+        {
+        method: "GET",
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+     )
+      const responsedata = await response.json();
+      console.log(responsedata.data);
+      setCart(responsedata.data.products);
+      setOrderTotal(responsedata.data.order_total_without_discount);
+      setShippingAmount(responsedata.data.shipping_amount);
+      setDiscounts(prevState => ({
+        ...prevState,
+        discounts: responsedata.data.discounts,
+        applied_coupons: responsedata.data.coupon_applied,
+      }));
+    
+      setOrderTotalWithShipping(responsedata.data.order_total);
+    }
+  }
+  async function apply400discount() {
+    const order_id = localStorage.getItem('order_id');
+    const response = await fetch(
+      app_url+'smwwcommercepayment/smww400discount?order_id='+order_id,
+      {
+      method: "GET",
+
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+   )
+   const responsedata = await response.json();
+  
+  } 
+  const handlePaymentMethodChange = (event) => {
+    setPaymentMethod(event.target.value);
+  };
+
+  const handleCheckboxChange = () => {
+    setSameAsShipping(!sameAsShipping);
+  };
+
+  const handleInputChange = (event) => {
+    const { name, value } = event.target;
+    setFormData({ ...formData, [name]: value });
+    if(name === 'country') {
+      retrieveStatesList(value);
+    }
+  };
+
+  const validateForm = () => {
+    const requiredFields = [
+      'email', 'country', 'state', 'firstName', 'lastName',
+      'address', 'zipCode', 'city', 'phone'
+    ];
+
+    const creditCardFields = ['cardName', 'cardNumber', 'cardExpiry', 'cardCvc'];
+
+    for (const field of requiredFields) {
+      if (!formData[field]) {
+        alert(`Please fill in the ${field} field.`);
+        return false;
+      }
+    }
+
+    if (paymentMethod === 'CreditCard') {
+      for (const field of creditCardFields) {
+        if (!formData[field]) {
+          alert(`Please fill in the ${field} field.`);
+          return false;
+        }
+      }
+
+      // Additional checks for card fields
+      if (formData.cardNumber.replace(/\s/g, '').length !== 16) {
+        alert('Card Number must be 16 digits.');
+        return false;
+      }
+
+      if (formData.cardCvc.length < 3 || formData.cardCvc.length > 4) {
+        alert('Card CVC must be 3 or 4 digits.');
+        return false;
+      }
+      
+    }
+
+    return true;
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    if (validateForm()) {
+      console.log('Form Data Submitted:', formData);
+    }
+  };
+  const handleAddCoupon = async event => { 
+    if(!formData.coupon) {
+      window.alert('Please enter the coupon.');
+      return false;
+    }
+   
+    const postData = {
+      coupon: formData.coupon,
+      order_id: localStorage.getItem('order_id')
+      }
+    const response = await fetch(app_url+'smwwcommercecheckout/addcoupon', {
+      method: 'POST',
+      body: JSON.stringify(postData),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      });
+      const data = await response.json();
+      if(data.data.result.error_msg) {
+        setCouponError(data.data.result.error_msg);
+      }
+      if(data.data.result.success_msg) {
+        setCouponError('');
+        retrieveCartProducts();
+      }
+  };
+  const handleRemoveCoupon = async (couponname) => {
+    const postData = {
+      coupon: couponname,
+      order_id: localStorage.getItem('order_id')
+      }
+      const response = await fetch(app_url+'smwwcommercecheckout/removecoupon', {
+        method: 'POST',
+        body: JSON.stringify(postData),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        });
+        const data = await response.json();
+        if(data.data.msg === "Success") {
+          retrieveCartProducts();
+        }
+  };
+
+  const handleCardNumberChange = (event) => {
+    const { value } = event.target;
+    const formattedValue = value
+      .replace(/\s/g, '')
+      .replace(/(\d{4})/g, '$1 ')
+      .trim();
+    if (/^\d{0,16}$/.test(value.replace(/\s/g, ''))) {
+      setFormData({ ...formData, cardNumber: formattedValue });
+    }
+  };
+
+  const handleCardExpiryChange = (event) => {
+    const { value } = event.target;
+    let formattedValue = value.replace(/\D/g, '');
+  
+    if (formattedValue.length > 4) {
+      formattedValue = formattedValue.replace(/(\d{2})(\d{4})/, '$1 / $2');
+    } else if (formattedValue.length > 2) {
+      formattedValue = formattedValue.replace(/(\d{2})/, '$1 / ');
+    }
+  
+    setFormData({ ...formData, cardExpiry: formattedValue });
+  };
+  
+
+  const handleCardCvcChange = (event) => {
+    const { value } = event.target;
+    if (/^\d{0,4}$/.test(value)) {
+      setFormData({ ...formData, cardCvc: value });
+    }
+  };
+  
+
+  return (
+    <div className="payment-container">
+      <Helmet><title>SMWW Card Payment</title></Helmet>
+      <div className="main-content">
+        <div className="payment-info">
+          <h2>SHIPPING INFORMATION</h2>
+          <div className="payment-shipping-info">
+            <div className="shipping-address">
+              <p>SHIPPING ADDRESS</p>
+            
+              <p>{formData.address}</p>
+              <p>{formData.stateName}, {formData.zipCode}</p>
+              <p>{formData.countryName}</p>
+            </div>
+            <div className="shipping-method">
+              <p>SHIPPING METHOD:</p>
+              <p>{formData.shippingMethod}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="payment-section">
+          
+          <form id="payment-form">
+            {!sameAsShipping && (
+              <div className="billing-info">
+                <h2>BILLING INFORMATION</h2>
+                <input type="email" className='payment-page-textbox' name="email" placeholder="Email Address *" value={formData.email} onChange={handleInputChange} required />
+                <select name="country" className='payment-page-textbox' value={formData.country} onChange={handleInputChange} required>
+                <option value="">Select Country</option>
+                {Object.keys(countrieslist).map(item => {
+                  return <option key={countrieslist[item].sortname} value={countrieslist[item].sortname}>{countrieslist[item].name}</option>
+                })}
+              </select>
+              <select name="state" className='payment-page-textbox' value={formData.state} onChange={handleInputChange} required>
+               <option value="">Select State</option>
+                {Object.keys(stateslist).map(state => {
+                 return <option key={stateslist[state].id} value={stateslist[state].id}>{stateslist[state].name}</option>
+              })}
+              </select>
+                <div className="ch-inline-inputs">
+                <input type="text" className='payment-page-textbox' name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleInputChange} required />
+                <input type="text" className='payment-page-textbox' name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleInputChange} required />
+                </div>
+                <input type="text" className='payment-page-textbox' name="address" placeholder="Address" value={formData.address} onChange={handleInputChange} required />
+                <input type="text" className='payment-page-textbox' name="addressOptional" placeholder="Address (Optional)" value={formData.addressOptional} onChange={handleInputChange} />
+                <div className="ch-inline-inputs">
+                <input type="text" className='payment-page-textbox' name="zipCode" placeholder="Zip Code" value={formData.zipCode} onChange={handleInputChange} required />
+                <input type="text" className='payment-page-textbox' name="city" placeholder="City" value={formData.city} onChange={handleInputChange} required />
+                </div>
+                <div className="ch-inline-inputs">
+                <input type="text" className='payment-page-textbox' name="region" placeholder="Region (Optional)" value={formData.region} onChange={handleInputChange} />
+                <input type="text" className='payment-page-textbox' name="phone" placeholder="Phone" value={formData.phone} onChange={handleInputChange} required />
+                </div>
+              </div>
+            )}
+
+            <h2>PAYMENT</h2>
+            <div className="billing-address">
+              <input type="checkbox" name="sameAsShipping" checked={sameAsShipping} onChange={handleCheckboxChange} />
+              <label className='pamt-billing'>My billing address is the same as my shipping address</label>
+            </div>
+            <div className="payment-method">
+              <div className="payment-method-item">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="PayPal"
+                  checked={paymentMethod === 'PayPal'}
+                  onChange={handlePaymentMethodChange}
+                />
+                <label className='pmt-type-labels'>
+                  PayPal
+                  <img src="http://newsmww.preferati.net/sites/all/themes/smww_commerce/pay/img/paypal_logo.png" alt="PayPal" className="paypal-logo" />
+                </label>
+              </div>
+              <div className="payment-method-item">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="CreditCard"
+                  checked={paymentMethod === 'CreditCard'}
+                  onChange={handlePaymentMethodChange}
+                />
+                <label className='pmt-type-labels'>
+                  Credit or Debit Card
+                  <img src="http://newsmww.preferati.net/sites/all/themes/smww_commerce/pay/img/card_img.png" alt="Credit Cards" className="credit-card-logos" />
+                </label>
+              </div>
+            </div>
+
+            {paymentMethod === 'CreditCard' && (
+              <>
+                <input type="text" className='payment-page-textbox' name="cardName" placeholder="Name On The Card" value={formData.cardName} onChange={handleInputChange} required />
+                <div className='credit-card-input'>
+                  <input
+                    type="tel"
+                    className='payment-page-textbox'
+                    name="cardNumber"
+                    placeholder="Card Number"
+                    value={formData.cardNumber}
+                    onChange={handleCardNumberChange}
+                    pattern="\d{4}\s\d{4}\s\d{4}\s\d{4}"
+                    required
+                  />
+                  <span className='cc-card'><i className="fa-regular fa-credit-card"></i></span>
+                </div>
+                <div className="card-expiry-cvc">
+                  <input
+                    type="tel"
+                    className='payment-page-textbox'
+                    name="cardExpiry"
+                    placeholder="MM / YYYY"
+                    value={formData.cardExpiry}
+                    onChange={handleCardExpiryChange}
+                    pattern="\d{2}\s/\s\d{4}"
+                    required
+                  />
+                  <input
+                    type="tel"
+                    className='payment-page-textbox'
+                    name="cardCvc"
+                    placeholder="CVC"
+                    value={formData.cardCvc}
+                    onChange={handleCardCvcChange}
+                    pattern="\d{3,4}"
+                    required
+                  />
+
+                </div>
+              </>
+            )}
+
+            <div className="recaptcha">
+              <div className="recaptcha-logo"></div>
+              <label>I'm not a robot</label>
+            </div>
+            <button type="submit" className="pay-now-button" onClick={handleSubmit}>
+              {paymentMethod === 'PayPal' ? 'Proceed to PayPal' : 'Pay Now'}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div className="checkout-page-order-summary left-space">
+        <h2>YOUR ORDER</h2>
+        <div className="ch-order-details">
+          <div>
+            <div className="order-items">
+              <span>Product Items ({cart.length})</span>
+              <span>${total}</span>
+            </div>
+            <hr className='payment-hr' />
+            {discounts.discounts.length > 0 &&
+              <div>
+              {discounts.discounts.map((item, index) => (
+                 <>
+                {item.amount > 0 &&
+                 <><div className="order-shipping"><span>{item.name}</span><span>${item.amount.toLocaleString()}</span></div><hr className='payment-hr' /></>
+                }
+                 </>
+              ))}
+             </div>
+             }
+           
+            <div className="order-shipping">
+              <span>Shipping</span>
+              <span>${shippingamount}</span>
+            </div>
+            <hr className='payment-hr' />
+            <div className="ch-order-total">
+              <span className='ch-total'>TOTAL</span>
+              <span className='ch-total-amount'>${totalwithshipping}</span>
+            </div>
+            <button type="button" className="pay-now-oder-button">{paymentMethod === 'PayPal' ? 'Proceed to PayPal' : 'Pay Now'}</button>
+          </div>
+          <div className='coupon-container-dotted'>
+            <div className="coupon-container">
+              <input type="text" name="coupon" placeholder="Coupon" onChange={handleInputChange}/>
+              <button className="ch-apply-coupon" onClick={handleAddCoupon}>Apply</button>
+            </div>
+            {couponerror &&
+                  <span className="error-message">{couponerror}</span>
+                }
+          </div>
+          </div>
+            {discounts.applied_coupons.length > 0 &&
+              <div>
+                <h3>Applied Coupon</h3>
+                <div className="product-details">
+                {discounts.applied_coupons.map((item, index) => (
+                    <><p>{item.name}</p><p>${item.unit_amount}</p><p><button  type="button" className="" onClick={() => handleRemoveCoupon(item.name)}>Remove</button></p><br /></>
+                ))}
+                </div>
+              </div>
+            }
+            <div>
+          <div>
+            <h3 className='prod-pay'>PRODUCT DETAILS</h3>
+            {cart.map((item, index) => (
+              <div className="product-details">
+                <p>{item.name}</p>
+                <p>${item.calculated_amount}</p><br/>
+                
+              
+              </div>
+            
+            ))}
+            <hr className='payment-hr' />
+          </div>
+          <div className="pay-order-note">
+            <p>*Discounts are applied during checkout.</p>
+            <hr className='payment-hr' />
+            <p>**All prices are in USD.</p>
+            <hr className='payment-hr' />
+            <p className='pay-last'>***Entering your contact information during checkout will put you on SMWW's newsletter and SMS 
+              list which you can unsubscribe from at any time. <a href='https://www.sportsmanagementworldwide.com/privacy'>Click</a> here to view our Privacy Policy.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PaymentPage;
